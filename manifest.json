@@ -1,6 +1,6 @@
 {
-  "manifest_version": 2,
-  "name": "h",
+  "manifest_version": 3,
+  "name": "Duolingo Answer Enhancer",
   "version": "1.0",
 
   "description": "Enforces use of accents in translation challenges and prompts to self-check incorrect answers before submitting.",
@@ -8,18 +8,21 @@
   "icons": {
     "48": "icon-48.png"
   },
-  
   "content_scripts": [
     {
       "matches": ["https://*.duolingo.com/*"],
-      "js": ["arrive.min.js", "h.js"]
+      "js": ["arrive.min.js", "content.js"]
     }
   ],
+  "web_accessible_resources": [{
+    "resources": ["fetch-override.js"],
+    "matches": ["https://*.duolingo.com/*"]
+  }],
+  
   
   "browser_specific_settings": {
 	"gecko": {
 	  "id": "duolingo-answer-enhancer@pigc.art"
 	}
   }
-
 }
