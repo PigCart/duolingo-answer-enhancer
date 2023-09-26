@@ -5,18 +5,25 @@ var translations;
 var nextButton;
 var foundPrompt;
 var liveSession;
+
+// Insert web accessible script to override fetch method
 var fetchScript = document.createElement('script');
 fetchScript.src = browser.runtime.getURL('fetch-override.js');
 document.head.appendChild(fetchScript);
 
-document.addEventListener('fetchSessions', function (event) {
+// Listen for events from the fetch override
+document.addEventListener('fetchSessions', (event) => {
+    oldSession = liveSession;
     liveSession = event.detail;
     console.log('intercepted session fetch:', liveSession);
-    //TODO: get out the livesession.data.json or whatever
+    // on learn page sometimes a session is sent. it is added to prefetched sessions.
+    if (liveSession.id == oldSession.id) {alert("session Id matches old session")} // do sessions ever get sent twice?
+    //TODO: would be nice to identify and track the correct session
+
+    // did a practice session that only seemed to use the 'challenges' array. when are the other challenge types used? they seems to be duplicates... mostly?
 });
 
-loadPrefetchedSessions();
-
+// cancel enter key presses to prevent the challenge ending and instead run the custom answer checker
 window.addEventListener("keydown", function(keyboardEvent) {
     if(keyboardEvent.key == "Enter") {
         keyboardEvent.stopImmediatePropagation();
@@ -29,6 +36,7 @@ window.addEventListener("keydown", function(keyboardEvent) {
     }
 }, true);
 
+// load prefetched sessions when the user goes to their course homepage
 setInterval(() => {
     if (previousURL != window.location.href) {
         previousURL = window.location.href;
@@ -36,9 +44,9 @@ setInterval(() => {
             loadPrefetchedSessions();
         }
     }
+    //FIXME: why function "dies"(?) when challenge changes??
     if (document.getElementById("yourButtonButBetter") != null) {
         document.getElementById("yourButtonButBetter").onclick = function() {checkAnswer()}
-        // temp workaround til i figure out why function seems to "die"(?) when challenge changes.
     }
 }, 1000)
 // insert custom next button on top of the original
@@ -55,6 +63,7 @@ document.arrive('button[data-test="player-next"]', {fireOnAttributesModification
         console.log(newNode);
     }
 });
+// Check answer by comparing the textarea content to the list of translations
 function checkAnswer() {
     if (document.querySelector('div[data-test="challenge challenge-translate"]') != null || document.querySelector('div[data-test="challenge challenge-completeReverseTranslation"]') != null) {
         if (document.querySelector('textarea[data-test="challenge-translate-input"]') != null) {
@@ -70,7 +79,7 @@ function checkAnswer() {
                     }
                 }
             } else {
-                console.log("got no translations, clicking nextButton");
+                console.log("find 0 translations, clicking nextButton");
                 nextButton.click();
             }
         } else {
@@ -82,19 +91,21 @@ function checkAnswer() {
         nextButton.click();
     }
 }
+// detect arrival of a new translation challenge
 document.arrive('div[data-test="challenge challenge-translate"]', {fireOnAttributesModification: true, existing: true}, () => {
     onTranslationChallenge()
 });
 document.arrive('div[data-test="challenge challenge-completeReverseTranslation"]', {fireOnAttributesModification: true, existing: true}, () => {
     onTranslationChallenge()
 });
+
+// Automatically click button to switch from bubbles to keyboard and fetch the translations for the displayed prompt
 function onTranslationChallenge() {
     console.log('New translation exercise!')
-    // Automatically click button to switch from bubbles to keyboard
     const difficultyButton = document.querySelector('button[data-test="player-toggle-keyboard"]');
     if (difficultyButton != null) {
         if (difficultyButton.textContent == "Make harder" || difficultyButton.textContent == "Use keyboard") {
-            //TODO: this isn't working for "Use keyboard" buttons
+            //FIXME: this isn't working for "Use keyboard" buttons
             // (and also wont work if the users UI language isn't set to english)
             console.log('Pressed "Make Harder" button!');
             difficultyButton.click();
@@ -112,6 +123,7 @@ function onTranslationChallenge() {
         getPromptTranslations(sentence);
     }, 2000);
 }
+// open duolingo indexed database and request prefetched sessions
 function loadPrefetchedSessions() {
     if (!('indexedDB' in window)) {
         alert("This browser doesn't support IndexedDB");
@@ -133,25 +145,39 @@ function loadPrefetchedSessions() {
         }
     }
 }
+// go through all challenges from the live and prefetched sessions to search for translations of a prompt
 function getPromptTranslations(prompt) {
     console.log("getting translations for prompt: " + prompt);
     translations = [];
     foundPrompt = false;
-    //TODO: Rewrite this to prioritise use of the live session
+    liveSession.challenges.forEach(challenge => {
+        extractTranslationsFromChallenge(challenge, prompt);
+    });
+    if (Object.hasOwn(liveSession, "adaptiveChallenges")) {
+        liveSession.adaptiveChallenges.forEach(challenge => {
+            extractTranslationsFromChallenge(challenge, prompt);
+        });
+    }
+    liveSession.adaptiveInterleavedChallenges.challenges.forEach(challenge => {
+        extractTranslationsFromChallenge(challenge, prompt);
+    });
+    liveSession.easierAdaptiveChallenges.forEach(challenge => {
+        extractTranslationsFromChallenge(challenge, prompt);
+    });
     prefetchedSessions.forEach(prefetchedSession => {
         prefetchedSession.session.challenges.forEach(challenge => {
-            extractTranslations(challenge, prompt);
+            extractTranslationsFromChallenge(challenge, prompt);
         });
         if (Object.hasOwn(prefetchedSession.session, "adaptiveChallenges")) {
             prefetchedSession.session.adaptiveChallenges.forEach(challenge => {
-                extractTranslations(challenge, prompt);
+                extractTranslationsFromChallenge(challenge, prompt);
             });
         }
         prefetchedSession.session.adaptiveInterleavedChallenges.challenges.forEach(challenge => {
-            extractTranslations(challenge, prompt);
+            extractTranslationsFromChallenge(challenge, prompt);
         });
         prefetchedSession.session.easierAdaptiveChallenges.forEach(challenge => {
-            extractTranslations(challenge, prompt);
+            extractTranslationsFromChallenge(challenge, prompt);
         });
     });
     if (foundPrompt == false) {
@@ -160,7 +186,8 @@ function getPromptTranslations(prompt) {
         // (but may contain most of the same challenges if part of a level that does have a prefetched session)
     }
 };
-function extractTranslations(challenge, prompt) {
+// get compactTranslations and turn them into regex
+function extractTranslationsFromChallenge(challenge, prompt) {
     if (challenge.prompt == prompt) {
         foundPrompt = true;
         console.log("found challenge matching prompt:");
