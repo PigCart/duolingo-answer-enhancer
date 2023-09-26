@@ -1,4 +1,3 @@
-var liveSession;
 const originalFetch = window.fetch;
 window.fetch = async (...args) => {
     let [resource, config] = args;
