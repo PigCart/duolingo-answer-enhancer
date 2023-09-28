@@ -1,0 +1,9 @@
+{
+  "dependencies": {
+    "@types/firefox-webext-browser": "^111.0.2",
+    "arrive": "^2.4.1"
+  },
+  "devDependencies": {
+    "@types/arrive": "^2.4.2"
+  }
+}
