@@ -1,12 +1,9 @@
-import arrive = require("arrive");
-
-//TODO: typing (describe duolingo thingies with interfaces?)
-var nextButton: HTMLButtonElement | null;
-var prefetchedSessions: any[];
-var previousURL: string;
-var translations: any;
+var nextButton;
+var prefetchedSessions;
+var previousURL;
+var translations;
 var foundPrompt;
-var liveSession: any;
+var liveSession;
 var oldSession;
 
 // Insert web accessible script to override fetch method
@@ -15,7 +12,7 @@ fetchScript.src = browser.runtime.getURL('fetch-override.js');
 document.head.appendChild(fetchScript);
 
 // Listen for events from the fetch override
-document.addEventListener('fetchSessions', ((event: CustomEvent) => {
+document.addEventListener('fetchSessions', (event) => {
     oldSession = liveSession;
     liveSession = event.detail;
     console.log('intercepted session fetch:', liveSession);
@@ -23,7 +20,7 @@ document.addEventListener('fetchSessions', ((event: CustomEvent) => {
     if (liveSession.id == oldSession.id) {alert("session Id matches old session")} // do sessions ever get sent twice?
     //TODO: would be nice to identify and track the correct session
     // did a practice session that only seemed to use the 'challenges' array. when are the other challenge types used? they seems to be duplicates... mostly?
-}) as EventListener);
+});
 
 // cancel enter key presses to prevent the challenge ending and instead run the custom answer checker
 window.addEventListener("keydown", function(keyboardEvent) {
@@ -63,7 +60,7 @@ document.arrive('button[data-test="player-next"]', {fireOnAttributesModification
             newNode.style.height = "100%"; newNode.style.width = "100%"; newNode.style.position = "absolute"; newNode.style.top = "0"; newNode.style.cursor = "pointer";
             newNode.id = "yourButtonButBetter";
             newNode.onclick = function() {checkAnswer()};
-            nextButton.parentElement!.appendChild(newNode);
+            nextButton.parentElement.appendChild(newNode);
             console.log(newNode);
         }
     } else {
@@ -79,7 +76,7 @@ function checkAnswer() {
     if (document.querySelector('div[data-test="challenge challenge-translate"]') != null || document.querySelector('div[data-test="challenge challenge-completeReverseTranslation"]') != null) {
         if (document.querySelector('textarea[data-test="challenge-translate-input"]') != null) {
             if (translations.length > 0) {
-                const userinput = document.querySelector('textarea[data-test="challenge-translate-input"]')!.textContent!.toLowerCase();
+                const userinput = document.querySelector('textarea[data-test="challenge-translate-input"]').textContent.toLowerCase();
                 for (var i = 0; i < translations.length; i++) {
                     console.log(translations[i]);
                     if (translations[i].test(userinput)) {
@@ -113,7 +110,7 @@ document.arrive('div[data-test="challenge challenge-completeReverseTranslation"]
 // Automatically click button to switch from bubbles to keyboard and fetch the translations for the displayed prompt
 function onTranslationChallenge() {
     console.log('New translation exercise!')
-    const difficultyButton: HTMLButtonElement | null = document.querySelector('button[data-test="player-toggle-keyboard"]');
+    const difficultyButton = document.querySelector('button[data-test="player-toggle-keyboard"]');
     if (difficultyButton != null) {
         if (difficultyButton.textContent == "Make harder" || difficultyButton.textContent == "Use keyboard") {
             //FIXME: this isn't working for "Use keyboard" buttons
@@ -128,7 +125,7 @@ function onTranslationChallenge() {
         const sentenceTokenNodes = document.querySelectorAll('[data-test="hint-token"]');
         var sentence = "";
         for (var i = 0; i < sentenceTokenNodes.length; i++) {
-            sentence = sentence.concat(sentenceTokenNodes[i].textContent!);
+            sentence = sentence.concat(sentenceTokenNodes[i].textContent);
         }
         //TODO: Support audio prompts (grab ids for audio clips? i think the clip urls are stored in the challenges?)
         getPromptTranslations(sentence);
@@ -157,37 +154,37 @@ function loadPrefetchedSessions() {
     }
 }
 // go through all challenges from the live and prefetched sessions to search for translations of a prompt
-function getPromptTranslations(prompt: string) {
+function getPromptTranslations(prompt) {
     console.log("getting translations for prompt: " + prompt);
     translations = [];
     foundPrompt = false;
-    liveSession.challenges.forEach((challenge: any) => {
+    liveSession.challenges.forEach((challenge) => {
         extractTranslationsFromChallenge(challenge, prompt);
     });
     if (Object.hasOwn(liveSession, "adaptiveChallenges")) {
-        liveSession.adaptiveChallenges.forEach((challenge: any) => {
+        liveSession.adaptiveChallenges.forEach((challenge) => {
             extractTranslationsFromChallenge(challenge, prompt);
         });
     }
-    liveSession.adaptiveInterleavedChallenges.challenges.forEach((challenge: any) => {
+    liveSession.adaptiveInterleavedChallenges.challenges.forEach((challenge) => {
         extractTranslationsFromChallenge(challenge, prompt);
     });
-    liveSession.easierAdaptiveChallenges.forEach((challenge: any) => {
+    liveSession.easierAdaptiveChallenges.forEach((challenge) => {
         extractTranslationsFromChallenge(challenge, prompt);
     });
-    prefetchedSessions.forEach((prefetchedSession: any) => {
-        prefetchedSession.session.challenges.forEach((challenge: any) => {
+    prefetchedSessions.forEach((prefetchedSession) => {
+        prefetchedSession.session.challenges.forEach((challenge) => {
             extractTranslationsFromChallenge(challenge, prompt);
         });
         if (Object.hasOwn(prefetchedSession.session, "adaptiveChallenges")) {
-            prefetchedSession.session.adaptiveChallenges.forEach((challenge: any) => {
+            prefetchedSession.session.adaptiveChallenges.forEach((challenge) => {
                 extractTranslationsFromChallenge(challenge, prompt);
             });
         }
-        prefetchedSession.session.adaptiveInterleavedChallenges.challenges.forEach((challenge: any) => {
+        prefetchedSession.session.adaptiveInterleavedChallenges.challenges.forEach((challenge) => {
             extractTranslationsFromChallenge(challenge, prompt);
         });
-        prefetchedSession.session.easierAdaptiveChallenges.forEach((challenge: any) => {
+        prefetchedSession.session.easierAdaptiveChallenges.forEach((challenge) => {
             extractTranslationsFromChallenge(challenge, prompt);
         });
     });
@@ -198,13 +195,13 @@ function getPromptTranslations(prompt: string) {
     }
 };
 // get compactTranslations and turn them into regex
-function extractTranslationsFromChallenge(challenge: any, prompt: string) {
+function extractTranslationsFromChallenge(challenge, prompt) {
     if (challenge.prompt == prompt) {
         foundPrompt = true;
         console.log("found challenge matching prompt:");
         console.log(challenge);
         if (Object.hasOwn(challenge, "compactTranslations")) {
-            challenge.compactTranslations.forEach((compactTranslation: any) => {
+            challenge.compactTranslations.forEach((compactTranslation) => {
                 translations.push(new RegExp(compactTranslation.toLowerCase()
                         .replaceAll("[", "(")
                         .replaceAll("]", ")")
