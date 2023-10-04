@@ -5,6 +5,7 @@ var translations;
 var foundPrompt;
 var liveSession;
 var oldSession;
+var compactedGrader = [];
 
 // Insert web accessible script to override fetch method
 var fetchScript = document.createElement('script');
@@ -155,51 +156,39 @@ function loadPrefetchedSessions() {
 }
 // go through all challenges from the live and prefetched sessions to search for translations of a prompt
 function getPromptTranslations(prompt) {
-    console.log("getting translations for prompt: " + prompt);
+    //FIXME: somethings fucked! D:
     translations = [];
     foundPrompt = false;
-    liveSession.challenges.forEach((challenge) => {
-        extractTranslationsFromChallenge(challenge, prompt);
-    });
-    if (Object.hasOwn(liveSession, "adaptiveChallenges")) {
-        liveSession.adaptiveChallenges.forEach((challenge) => {
-            extractTranslationsFromChallenge(challenge, prompt);
-        });
-    }
-    liveSession.adaptiveInterleavedChallenges.challenges.forEach((challenge) => {
-        extractTranslationsFromChallenge(challenge, prompt);
-    });
-    liveSession.easierAdaptiveChallenges.forEach((challenge) => {
-        extractTranslationsFromChallenge(challenge, prompt);
-    });
+    //if (liveSession != null) { searchSessionChallenges(liveSession, prompt) }
     prefetchedSessions.forEach((prefetchedSession) => {
-        prefetchedSession.session.challenges.forEach((challenge) => {
-            extractTranslationsFromChallenge(challenge, prompt);
-        });
-        if (Object.hasOwn(prefetchedSession.session, "adaptiveChallenges")) {
-            prefetchedSession.session.adaptiveChallenges.forEach((challenge) => {
-                extractTranslationsFromChallenge(challenge, prompt);
-            });
-        }
-        prefetchedSession.session.adaptiveInterleavedChallenges.challenges.forEach((challenge) => {
-            extractTranslationsFromChallenge(challenge, prompt);
-        });
-        prefetchedSession.session.easierAdaptiveChallenges.forEach((challenge) => {
-            extractTranslationsFromChallenge(challenge, prompt);
-        });
+        searchSessionChallenges(prefetchedSession.session, prompt)
     });
     if (foundPrompt == false) {
-        console.log("Couldn't find challenge with prompt: " + prompt);
-        // if this happens it is because the session is not prefetched
-        // (but may contain most of the same challenges if part of a level that does have a prefetched session)
+        console.error("Couldn't find challenge with prompt: " + prompt);
     }
 };
+
+// check translations for all challenge types for the specified session
+function searchSessionChallenges(session, prompt) {
+    session.challenges.forEach((challenge) => {
+        extractTranslationsFromChallenge(challenge, prompt);
+    });
+    if (Object.hasOwn(session, "adaptiveChallenges")) {
+        session.adaptiveChallenges.forEach((challenge) => {
+            extractTranslationsFromChallenge(challenge, prompt);
+        });
+    }
+    session.adaptiveInterleavedChallenges.challenges.forEach((challenge) => {
+        extractTranslationsFromChallenge(challenge, prompt);
+    });
+    session.easierAdaptiveChallenges.forEach((challenge) => {
+        extractTranslationsFromChallenge(challenge, prompt);
+    });
+}
 // get compactTranslations and turn them into regex
 function extractTranslationsFromChallenge(challenge, prompt) {
     if (challenge.prompt == prompt) {
         foundPrompt = true;
-        console.log("found challenge matching prompt:");
-        console.log(challenge);
         if (Object.hasOwn(challenge, "compactTranslations")) {
             challenge.compactTranslations.forEach((compactTranslation) => {
                 translations.push(new RegExp(compactTranslation.toLowerCase()
@@ -214,13 +203,38 @@ function extractTranslationsFromChallenge(challenge, prompt) {
                 ));
             });
         }
+        compactedGrader = [];
+        consumeVertex(challenge.grader.vertices, 1, "");
+        console.log(compactedGrader);
+        //console.log(compactedGrader);
+        //console.log(challenge.compactTranslations);
+        //console.log(challenge.grader.vertices);
+        return
         if (translations.length == 0) {
-            console.log("Unable to extract translations from challenge:");
-            console.log(challenge);
+            console.error("Unable to extract translations from challenge:", challenge.prompt);
             //TODO: compactTranslations don't seem very reliable. This should be rewritten to use the grader object, which seems to be always present and have all translations.
         } else {
-            console.log("translations:");
-            console.log(translations);
+            console.log("translations:", translations);
         }
+    }
+}
+
+//good debug sentence, 132 solution variants (!!!)
+setTimeout(() => {
+    getPromptTranslations("The tiger thinks that you look like a good person.");
+}, 2000);
+
+// recursively traverse the solution graph to resolve each translation
+function consumeVertex(vertices, index, compactedTranslation) {
+    let vertex = vertices[index];
+    if (vertex.length == 0) {
+        // the grader ends with an empty vertex, so the translation should be complete at this point.
+        compactedGrader.push(compactedTranslation);
+    } else {
+        vertex.forEach((token) => {
+            consumeVertex(vertices, token.to, compactedTranslation + token.lenient);
+            // it works!!!
+            //TODO: including token.orig should make this on par with compact translations
+        })
     }
 }
