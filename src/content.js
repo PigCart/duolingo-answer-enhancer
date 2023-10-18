@@ -5,8 +5,7 @@ var solutionGrader;
 var foundPrompt;
 var liveSession;
 var translationCorrect;
-var hintMessage;
-var possibleHints;
+var possibleErrors;
 
 // Insert web accessible script to override fetch method
 var fetchScript = document.createElement('script');
@@ -106,22 +105,29 @@ function checkAnswer() {
     }
     if (document.querySelector('div[data-test="challenge challenge-translate"]') != null || document.querySelector('div[data-test="challenge challenge-completeReverseTranslation"]') != null) {
         if (document.querySelector('textarea[data-test="challenge-translate-input"]') != null) {
-            const userinput = document.querySelector('textarea[data-test="challenge-translate-input"]').textContent.toLowerCase().replaceAll(" ", "");
+            const userinput = document.querySelector('textarea[data-test="challenge-translate-input"]').textContent.toLowerCase();
             translationCorrect = false;
             console.log(solutionGrader.vertices);
-            possibleHints = [];
-            readVertex(1, userinput);
+            possibleErrors = [];
+            readVertex(1, userinput, 0);
             if (!translationCorrect) {
-                console.log(possibleHints);
-                let currentHighestValue = 0;
-                possibleHints.forEach((possibleHint) => {
-                    if (possibleHint[0] >= currentHighestValue) {
-                        currentHighestValue = possibleHint[0];
-                        hintMessage = possibleHint[1];
+                console.log("POSSIBLE ERRORS:", possibleErrors);
+                let chosenErrors = [possibleErrors[0]];
+                possibleErrors.forEach((possibleError) => {
+                    if (possibleError.index > chosenErrors[0].index) {
+                        chosenErrors = [possibleError];
+                    } else if (possibleError.index == chosenErrors[0].index) {
+                        chosenErrors.push(possibleError);
                     }
                 })
-        
-                tryAgainPrompt(hintMessage);
+                // errors in the same position are likely all valid hints so select one randomly
+                if (chosenErrors.length > 1) {
+                    const random = Math.floor(Math.random() * chosenErrors.length);
+                    tryAgainPrompt(chosenErrors[random].character);
+                    console.log(random, chosenErrors);
+                } else {
+                    tryAgainPrompt(chosenErrors[0].character);
+                }
             } else {
                 nextButton.click();
                 if (document.getElementById("answer-enhancer-retry-prompt") != null) {
@@ -140,10 +146,8 @@ function checkAnswer() {
 function onTranslationChallenge() {
     const difficultyButton = document.querySelector('button[data-test="player-toggle-keyboard"]');
     if (difficultyButton != null) {
-        if (difficultyButton.textContent == "Make harder" || difficultyButton.textContent == "Use keyboard") {
-            //FIXME: this isn't working for "Use keyboard" buttons
-            // (and also wont work if the users UI language isn't set to english)
-            console.log('Pressed "Make Harder" button!');
+        const buttonImg = difficultyButton.getElementsByTagName('img')[0].src;
+        if (buttonImg == "https://d35aaqx5ub95lt.cloudfront.net/images/ed8f358a87ca3b9ba9cce34f5b0e0e11.svg" || buttonImg == "https://d35aaqx5ub95lt.cloudfront.net/images/05087a35a607783111e11cb81d1fcd33.svg") {
             difficultyButton.click();
         }
     }
@@ -158,7 +162,6 @@ function onTranslationChallenge() {
             for (var i = 0; i < sentenceTokenNodes.length; i++) {
                 sentence = sentence.concat(sentenceTokenNodes[i].getAttribute('aria-label').toLowerCase());
             }
-            //TODO: Support audio prompts (grab ids for audio clips? i think the clip urls are stored in the challenges?)
             findGraderForPrompt(sentence);
         }
     }, 2000);
@@ -230,54 +233,51 @@ function getChallengeGrader(challenge, prompt) {
     }
 }
 
-// recursively traverse the solution graph to resolve a correct translation, discarding typo entries
-function readVertex(index, userinput) {
+// recursively traverse the solution graph to resolve a correct translation, discarding auto & typo entries
+function readVertex(index, userinput, inputposition) {
+    if (userinput == "") {
+        userinput = " "; //workaround for incomplete sentences
+    }
     let vertex = solutionGrader.vertices[index];
     if (vertex.length == 0) {
         // the grader ends with an empty vertex, so the translation should be correct at this point.
         translationCorrect = true;
     } else {
-        vertex.forEach((token) => {
+        for (let token of vertex) {
             if (token.type != "typo" && token.auto != true && translationCorrect != true) {
-                if (Object.hasOwn(token, "orig")) {
-                    if (doesTokenMatchInput(userinput, token.orig)) {
-                        readVertex(token.to, userinput.slice(token.orig.length));
+                if (tokenMatchesInput(userinput, token.lenient, inputposition)) {
+                    readVertex(token.to, userinput.slice(token.lenient.length), inputposition + token.lenient.length);
+                } else if (Object.hasOwn(token, "orig")) {
+                    if (tokenMatchesInput(userinput, token.orig, inputposition)) {
+                        readVertex(token.to, userinput.slice(token.orig.length), inputposition + token.orig.length);
                     }
                 }
-                if (token.lenient == " ") {
-                    readVertex(token.to, userinput);
-                } else if (doesTokenMatchInput(userinput, token.lenient)) {
-                    readVertex(token.to, userinput.slice(token.lenient.length));
-                }
             }
-        });
+        }
     }
 }
 
-function doesTokenMatchInput(userinput, tokenContent) {
-    let hintResult = null;
+// return true on match or return false and add the error to the errors list
+function tokenMatchesInput(userinput, tokenContent, inputposition) {
+    let nonMatchingCharacter = null;
     for (var i = 0; i < tokenContent.length; i++) {
         if (userinput[i] != tokenContent[i]) {
-            hintResult = [i, tokenContent[i]];
+            if (tokenContent[i] == " " || userinput[i + 1] == tokenContent[i]) {
+                nonMatchingCharacter = {"index": inputposition + i, "character":"❌" + userinput[i]};
+            } else {
+                nonMatchingCharacter = {"index": inputposition + i, "character": tokenContent[i]};
+            }
             break;
         }
     }
-    if (hintResult != null) {
-        possibleHints.push(hintResult);
+    if (nonMatchingCharacter != null) {
+        possibleErrors.push(nonMatchingCharacter);
+        console.log(tokenContent, nonMatchingCharacter);
         return false;
     } else {
+        console.log(tokenContent);
         return true;
     }
-}
-
-// return the first letter that doesn't match or null if input matches the token
-function getHint(userinput, solutionToken) {
-    for (var i = 0; i < solutionToken.length; i++) {
-        if (userinput[i] != solutionToken[i]) {
-            return [i, solutionToken[i]];
-        }
-    }
-    return null;
 }
 
 // convert compactTranslations to valid regex and ignore punctuation in translations or prompts
