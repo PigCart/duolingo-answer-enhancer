@@ -1,11 +1,12 @@
 var nextButton;
 var prefetchedSessions;
-var previousURL;
+var previousURL = "";
 var solutionGrader;
-var foundPrompt;
+var foundPrompt = false;
 var liveSession;
-var translationCorrect;
-var possibleErrors;
+var translationCorrect = false;
+var possibleErrors = [];
+var hasFailed = false;
 
 // Insert web accessible script to override fetch method
 var fetchScript = document.createElement('script');
@@ -15,7 +16,6 @@ document.head.appendChild(fetchScript);
 // Listen for events from the fetch override
 document.addEventListener('fetchSessions', (event) => {
     liveSession = event.detail;
-    console.log('intercepted session fetch:', liveSession);
     // on learn page sometimes a session is sent. it is added to prefetched sessions.
 });
 
@@ -78,7 +78,12 @@ function tryAgainPrompt(hintMessage) {
         innerDiv.appendChild(retryHeader);
         innerDiv.appendChild(retryHint);
     } else {
-        document.getElementById("answer-enhancer-retry-hint").textContent = "Letter hint: " + hintMessage;
+        //document.getElementById("answer-enhancer-retry-hint").textContent = "Letter hint: " + hintMessage;
+        nextButton.click();
+        if (document.getElementById("answer-enhancer-retry-prompt") != null) {
+            document.getElementById("answer-enhancer-retry-prompt").remove();
+            hasFailed = true;
+        }
     }
 }
 
@@ -101,17 +106,20 @@ document.arrive('div[data-test="challenge challenge-completeReverseTranslation"]
 function checkAnswer() {
     if (nextButton == null) {
         console.error("nextButton is null");
-        return
+        return;
+    }
+    if (hasFailed) {
+        hasFailed = false;
+        nextButton.click();
+        return;
     }
     if (document.querySelector('div[data-test="challenge challenge-translate"]') != null || document.querySelector('div[data-test="challenge challenge-completeReverseTranslation"]') != null) {
         if (document.querySelector('textarea[data-test="challenge-translate-input"]') != null) {
             const userinput = document.querySelector('textarea[data-test="challenge-translate-input"]').textContent.toLowerCase();
             translationCorrect = false;
-            console.log(solutionGrader.vertices);
             possibleErrors = [];
             readVertex(1, userinput, 0);
             if (!translationCorrect) {
-                console.log("POSSIBLE ERRORS:", possibleErrors);
                 let chosenErrors = [possibleErrors[0]];
                 possibleErrors.forEach((possibleError) => {
                     if (possibleError.index > chosenErrors[0].index) {
@@ -124,7 +132,6 @@ function checkAnswer() {
                 if (chosenErrors.length > 1) {
                     const random = Math.floor(Math.random() * chosenErrors.length);
                     tryAgainPrompt(chosenErrors[random].character);
-                    console.log(random, chosenErrors);
                 } else {
                     tryAgainPrompt(chosenErrors[0].character);
                 }
@@ -158,11 +165,21 @@ function onTranslationChallenge() {
         if (sentenceTokenNodes == null) {
             console.error("Could not get sentence token nodes");
         } else {
-            let sentence = "";
+            let prompt = "";
             for (var i = 0; i < sentenceTokenNodes.length; i++) {
-                sentence = sentence.concat(sentenceTokenNodes[i].getAttribute('aria-label').toLowerCase());
+                prompt = prompt.concat(sentenceTokenNodes[i].getAttribute('aria-label').toLowerCase());
             }
-            findGraderForPrompt(sentence);
+            translations = [];
+            foundPrompt = false;
+            if (liveSession != null) {
+                searchSessionChallenges(liveSession, prompt);
+            }
+            prefetchedSessions.forEach((prefetchedSession) => {
+                searchSessionChallenges(prefetchedSession.session, prompt);
+            });
+            if (foundPrompt == false) {
+                console.error("Couldn't find challenge with prompt: ", prompt);
+            }
         }
     }, 2000);
 }
@@ -184,20 +201,6 @@ function loadPrefetchedSessions() {
         }
     }
 }
-// go through all challenges from the live and prefetched sessions to search for translations of a prompt
-function findGraderForPrompt(prompt) {
-    translations = [];
-    foundPrompt = false;
-    if (liveSession != null) {
-        searchSessionChallenges(liveSession, prompt);
-    }
-    prefetchedSessions.forEach((prefetchedSession) => {
-        searchSessionChallenges(prefetchedSession.session, prompt);
-    });
-    if (foundPrompt == false) {
-        console.error("Couldn't find challenge with prompt: ", prompt);
-    }
-};
 
 // check translations for all challenge types for the specified session
 function searchSessionChallenges(session, prompt) {
@@ -219,8 +222,7 @@ function searchSessionChallenges(session, prompt) {
 // get translations from a challenge and turn them into regex.
 function getChallengeGrader(challenge, prompt) {
     if (challenge.prompt != null){
-        let challengePromptRegex = sentenceToRegex(challenge.prompt);
-        if (challengePromptRegex.test(prompt)) {
+        if (normalizeSentence(challenge.prompt) == normalizeSentence(prompt)) {
             foundPrompt = true;
             solutionGrader = challenge.grader
             if (solutionGrader.version != 0) {
@@ -272,27 +274,21 @@ function tokenMatchesInput(userinput, tokenContent, inputposition) {
     }
     if (nonMatchingCharacter != null) {
         possibleErrors.push(nonMatchingCharacter);
-        console.log(tokenContent, nonMatchingCharacter);
         return false;
     } else {
-        console.log(tokenContent);
         return true;
     }
 }
 
-// convert compactTranslations to valid regex and ignore punctuation in translations or prompts
-function sentenceToRegex(translationString) {
-    return RegExp("^" + translationString.toLowerCase()
-        .replaceAll("[", "(")
-        .replaceAll("]", ")")
-        .replaceAll("/", "|")
-        .replaceAll("?", "\\??")
-        .replaceAll(".", "\\.?")
-        .replaceAll("!", "!?")
-        .replaceAll(",", ",?")
-        .replaceAll("'", "'?")
-        .replaceAll(" ", " ?")
-        + "$"
-    );
+function normalizeSentence(sentence) {
+    return sentence.toLowerCase()
+        .replaceAll("?", "")
+        .replaceAll(".", "")
+        .replaceAll("!", "")
+        .replaceAll(",", "")
+        .replaceAll("'", "")
+        .replaceAll(" ", "")
+        .replaceAll("-", "")
+        .replaceAll(":", "")
 }
 loadPrefetchedSessions();
