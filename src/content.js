@@ -8,10 +8,13 @@ var translationCorrect = false;
 var possibleErrors = [];
 var hasFailed = false;
 
-// Insert web accessible script to override fetch method
 var fetchScript = document.createElement('script');
+var styleSheet = document.createElement('link');
 fetchScript.src = browser.runtime.getURL('fetch-override.js');
+styleSheet.href = browser.runtime.getURL('styles.css');
+styleSheet.rel = "stylesheet";
 document.head.appendChild(fetchScript);
+document.head.appendChild(styleSheet);
 
 // Listen for events from the fetch override
 document.addEventListener('fetchSessions', (event) => {
@@ -50,7 +53,6 @@ function replaceNextButton() {
     if (nextButton != null) {
         if (document.getElementById("yourButtonButBetter") == null) {
             const newNode = document.createElement("div");
-            newNode.style.height = "100%"; newNode.style.width = "100%"; newNode.style.position = "absolute"; newNode.style.top = "0"; newNode.style.cursor = "pointer";
             newNode.id = "yourButtonButBetter";
             newNode.onclick = function() {checkAnswer()};
             nextButton.parentElement.appendChild(newNode);
@@ -64,12 +66,10 @@ function replaceNextButton() {
 function tryAgainPrompt(hintMessage) {
     if (document.getElementById("answer-enhancer-retry-prompt") == null) {
         const retryElement = document.createElement("div");
-        retryElement.id = "answer-enhancer-retry-prompt"; retryElement.style.background = "linear-gradient(0deg, rgba(255,255,255,0) 0%, rgba(255,225,135,1) 100%)";
-        retryElement.style.width = "100%"; retryElement.style.zIndex = "24"; retryElement.style.position = "relative"; retryElement.style.bottom = "40px";
+        retryElement.id = "answer-enhancer-retry-prompt";
         const innerDiv = document.createElement("div");
-        innerDiv.style.padding = "16px 50px"; innerDiv.style.maxWidth = "1080px"; innerDiv.style.margin = "0 auto";
         const retryHeader = document.createElement("h2");
-        retryHeader.style.margin = "0"; retryHeader.textContent = "Try again.";
+        retryHeader.textContent = "Try again.";
         const retryHint = document.createElement("div");
         retryHint.id = "answer-enhancer-retry-hint"; retryHint.textContent = "Letter hint: " + hintMessage;
         document.getElementById("session/PlayerFooter").style.borderTop = "none";
