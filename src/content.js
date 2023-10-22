@@ -68,6 +68,7 @@ function tryAgainPrompt(hintMessage) {
         const retryElement = document.createElement("div");
         retryElement.id = "answer-enhancer-retry-prompt";
         const innerDiv = document.createElement("div");
+        innerDiv.className = "answer-enhancer-inner";
         const retryHeader = document.createElement("h2");
         retryHeader.textContent = "Try again.";
         const retryHint = document.createElement("div");
@@ -78,7 +79,6 @@ function tryAgainPrompt(hintMessage) {
         innerDiv.appendChild(retryHeader);
         innerDiv.appendChild(retryHint);
     } else {
-        //document.getElementById("answer-enhancer-retry-hint").textContent = "Letter hint: " + hintMessage;
         nextButton.click();
         if (document.getElementById("answer-enhancer-retry-prompt") != null) {
             document.getElementById("answer-enhancer-retry-prompt").remove();
@@ -237,14 +237,27 @@ function getChallengeGrader(challenge, prompt) {
 
 // recursively traverse the solution graph to resolve a correct translation, discarding auto & typo entries
 function readVertex(index, userinput, inputposition) {
-    if (userinput == "") {
-        userinput = " "; //workaround for incomplete sentences
-    }
     let vertex = solutionGrader.vertices[index];
     if (vertex.length == 0) {
         // the grader ends with an empty vertex, so the translation should be correct at this point.
-        translationCorrect = true;
+        if (userinput.length > 0) {
+            if (userinput[0] == " ") {
+                if (userinput[1] != null || userinput[1] != " ") {
+                    possibleErrors.push({"index": inputposition, "character":"❌" + userinput[1]})
+                } else {
+                    // user is being weird just ignore them
+                    translationCorrect = true;
+                }
+            } else {
+                possibleErrors.push({"index": inputposition, "character":"❌" + userinput[0]})
+            }
+        } else {
+            translationCorrect = true;
+        }
     } else {
+        if (userinput.length == 0) {
+            userinput = " "; //workaround for incomplete sentences
+        }
         for (let token of vertex) {
             if (token.type != "typo" && token.auto != true && translationCorrect != true) {
                 if (tokenMatchesInput(userinput, token.lenient, inputposition)) {

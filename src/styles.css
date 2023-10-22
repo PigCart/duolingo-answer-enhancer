@@ -6,16 +6,13 @@
     bottom: 40px;
     pointer-events: none;
 }
-#answer-enhancer-retry-prompt div {
+.answer-enhancer-inner {
     padding: 16px 50px;
     max-width: 1080px;
     margin: 0 auto;
 }
 #answer-enhancer-retry-prompt h2 {
     margin: 0;
-}
-#answer-enhancer-retry-hint {
-    padding: 0;
 }
 #yourButtonButBetter {
     height: 100%;
