@@ -19,8 +19,21 @@ document.head.appendChild(styleSheet);
 // Listen for events from the fetch override
 document.addEventListener('fetchSessions', (event) => {
     liveSession = event.detail;
-    // on learn page sometimes a session is sent. it is added to prefetched sessions.
+    // persist session across extension refresh for debugging...
+    if (document.getElementById("debugSession") == null) {
+        const sessionDebugElem = document.createElement('div');
+        sessionDebugElem.id = "debugSession";
+        sessionDebugElem.style = "display: none;";
+        sessionDebugElem.textContent = JSON.stringify(liveSession);
+        document.getElementsByTagName('body')[0].appendChild(sessionDebugElem);
+    } else {
+        document.getElementById("debugSession").textContent = JSON.stringify(liveSession);
+    }
 });
+if (document.getElementById("debugSession") != null) {
+    liveSession = JSON.parse(document.getElementById("debugSession").textContent);
+    console.log("retrieved debugSession", liveSession);
+}
 
 // cancel enter key presses to prevent the challenge ending and instead run the custom answer checker
 window.addEventListener("keydown", function(keyboardEvent) {
@@ -28,8 +41,11 @@ window.addEventListener("keydown", function(keyboardEvent) {
         keyboardEvent.stopImmediatePropagation();
         keyboardEvent.preventDefault();
         const customNextButton = this.document.getElementById("yourButtonButBetter");
+        console.log("enter");
         if (customNextButton != null) {
             checkAnswer();
+        } else {
+            console.error("customNextButton is null");
         }
     }
 }, true);
@@ -87,9 +103,18 @@ function tryAgainPrompt(hintMessage) {
     }
 }
 
+// remove try again prompt when user switches to word bank
+document.arrive('div[data-test="word-bank"]', {fireOnAttributesModification: true, existing: true}, () => {
+    if (document.getElementById("answer-enhancer-retry-prompt") != null) {
+        document.getElementById("answer-enhancer-retry-prompt").remove();
+        hasFailed = true;
+    }
+});
+
 // insert custom next button on top of the original
-document.arrive('button[data-test="player-next"]', {fireOnAttributesModification: true, existing: true}, () => {
-    nextButton = document.querySelector('button[data-test="player-next"]');
+document.arrive('button[data-test="player-next"]', {fireOnAttributesModification: true, existing: true}, (arrivingElement) => {
+    console.log("arrivingElement:", arrivingElement);
+    nextButton = arrivingElement;
     replaceNextButton();
 });
 
@@ -154,6 +179,7 @@ function onTranslationChallenge() {
     const difficultyButton = document.querySelector('button[data-test="player-toggle-keyboard"]');
     if (difficultyButton != null) {
         const buttonImg = difficultyButton.getElementsByTagName('img')[0].src;
+        //FIXME: only working on refresh
         if (buttonImg == "https://d35aaqx5ub95lt.cloudfront.net/images/ed8f358a87ca3b9ba9cce34f5b0e0e11.svg" || buttonImg == "https://d35aaqx5ub95lt.cloudfront.net/images/05087a35a607783111e11cb81d1fcd33.svg") {
             difficultyButton.click();
         }
@@ -236,10 +262,15 @@ function getChallengeGrader(challenge, prompt) {
 }
 
 // recursively traverse the solution graph to resolve a correct translation, discarding auto & typo entries
+//TODO: tokenise input
+// fixes situations such as:
+// the "f" from "Jag föddes..." being hinted at over "Jag är född..." when the user input "jag var född..." is closer to the latter.
+// the "g" from "vi vill gå..." being hinted at over "vi vill åka..." when the user input "vi vill ha åka..." is closer to the latter.
+// is also just a cleaner solution and easier to read and expand on instead of all this checking of spaces and throwing indicies around.
 function readVertex(index, userinput, inputposition) {
     let vertex = solutionGrader.vertices[index];
     if (vertex.length == 0) {
-        // the grader ends with an empty vertex, so the translation should be correct at this point.
+        // the grader ends with an empty vertex
         if (userinput.length > 0) {
             if (userinput[0] == " ") {
                 if (userinput[1] != null || userinput[1] != " ") {
