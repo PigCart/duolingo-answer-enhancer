@@ -41,7 +41,6 @@ window.addEventListener("keydown", function(keyboardEvent) {
         keyboardEvent.stopImmediatePropagation();
         keyboardEvent.preventDefault();
         const customNextButton = this.document.getElementById("yourButtonButBetter");
-        console.log("enter");
         if (customNextButton != null) {
             checkAnswer();
         } else {
@@ -111,9 +110,16 @@ document.arrive('div[data-test="word-bank"]', {fireOnAttributesModification: tru
     }
 });
 
+// press button to switch to harder difficulty challenge
+document.arrive('button[data-test="player-toggle-keyboard"]', (difficultyButton) => {
+    const buttonImg = difficultyButton.getElementsByTagName('img')[0].src;
+    if (buttonImg == "https://d35aaqx5ub95lt.cloudfront.net/images/ed8f358a87ca3b9ba9cce34f5b0e0e11.svg" || buttonImg == "https://d35aaqx5ub95lt.cloudfront.net/images/05087a35a607783111e11cb81d1fcd33.svg") {
+        difficultyButton.click();
+    }
+})
+
 // insert custom next button on top of the original
 document.arrive('button[data-test="player-next"]', {fireOnAttributesModification: true, existing: true}, (arrivingElement) => {
-    console.log("arrivingElement:", arrivingElement);
     nextButton = arrivingElement;
     replaceNextButton();
 });
@@ -174,19 +180,9 @@ function checkAnswer() {
     }
 }
 
-// Automatically click button to switch from bubbles to keyboard and fetch the grader for the challenge
+// delay for transition animations then find which challenge corresponds to the token labels
 function onTranslationChallenge() {
-    const difficultyButton = document.querySelector('button[data-test="player-toggle-keyboard"]');
-    if (difficultyButton != null) {
-        const buttonImg = difficultyButton.getElementsByTagName('img')[0].src;
-        //FIXME: only working on refresh
-        if (buttonImg == "https://d35aaqx5ub95lt.cloudfront.net/images/ed8f358a87ca3b9ba9cce34f5b0e0e11.svg" || buttonImg == "https://d35aaqx5ub95lt.cloudfront.net/images/05087a35a607783111e11cb81d1fcd33.svg") {
-            difficultyButton.click();
-        }
-    }
-    // delay to avoid picking up the previous challenge through transition animations
     setTimeout(function() {
-        // get prompt from sentence token labels
         const sentenceTokenNodes = document.querySelectorAll('[data-test="hint-token"]');
         if (sentenceTokenNodes == null) {
             console.error("Could not get sentence token nodes");
@@ -252,10 +248,10 @@ function getChallengeGrader(challenge, prompt) {
             foundPrompt = true;
             solutionGrader = challenge.grader
             if (solutionGrader.version != 0) {
-                console.log("Grader has updated and may result in errors");
+                console.warn("Grader has updated and may result in errors");
             }
             if (solutionGrader.whitespaceDelimited != true) {
-                console.log("this challenge is not whitespace delimited and may result in errors");
+                console.warn("this challenge is not whitespace delimited and may result in errors");
             }
         }
     }
