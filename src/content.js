@@ -64,19 +64,6 @@ setInterval(() => {
     }
 }, 1000);
 
-function replaceNextButton() {
-    if (nextButton != null) {
-        if (document.getElementById("yourButtonButBetter") == null) {
-            const newNode = document.createElement("div");
-            newNode.id = "yourButtonButBetter";
-            newNode.onclick = function() {checkAnswer()};
-            nextButton.parentElement.appendChild(newNode);
-        }
-    } else {
-        console.error("Couldn't find nextButton");
-    }
-}
-
 // insert a prompt to try again with a letter hint
 function tryAgainPrompt(hintMessage) {
     if (document.getElementById("answer-enhancer-retry-prompt") == null) {
@@ -121,7 +108,12 @@ document.arrive('button[data-test="player-toggle-keyboard"]', (difficultyButton)
 // insert custom next button on top of the original
 document.arrive('button[data-test="player-next"]', {fireOnAttributesModification: true, existing: true}, (arrivingElement) => {
     nextButton = arrivingElement;
-    replaceNextButton();
+    if (document.getElementById("yourButtonButBetter") == null) {
+        const newNode = document.createElement("div");
+        newNode.id = "yourButtonButBetter";
+        newNode.onclick = function() {checkAnswer()};
+        nextButton.parentElement.appendChild(newNode);
+    }
 });
 
 // detect arrival of a new translation challenge
@@ -132,53 +124,6 @@ document.arrive('div[data-test="challenge challenge-translate"]', {fireOnAttribu
 document.arrive('div[data-test="challenge challenge-completeReverseTranslation"]', {fireOnAttributesModification: true, existing: true}, () => {
     onTranslationChallenge();
 });
-
-// Check answer by comparing the textarea content to the list of translations
-function checkAnswer() {
-    if (nextButton == null) {
-        console.error("nextButton is null");
-        return;
-    }
-    if (hasFailed) {
-        hasFailed = false;
-        nextButton.click();
-        return;
-    }
-    if (document.querySelector('div[data-test="challenge challenge-translate"]') != null || document.querySelector('div[data-test="challenge challenge-completeReverseTranslation"]') != null) {
-        if (document.querySelector('textarea[data-test="challenge-translate-input"]') != null) {
-            const userinput = document.querySelector('textarea[data-test="challenge-translate-input"]').textContent.toLowerCase();
-            translationCorrect = false;
-            possibleErrors = [];
-            readVertex(1, userinput, 0);
-            if (!translationCorrect) {
-                let chosenErrors = [possibleErrors[0]];
-                possibleErrors.forEach((possibleError) => {
-                    if (possibleError.index > chosenErrors[0].index) {
-                        chosenErrors = [possibleError];
-                    } else if (possibleError.index == chosenErrors[0].index) {
-                        chosenErrors.push(possibleError);
-                    }
-                })
-                // errors in the same position are likely all valid hints so select one randomly
-                if (chosenErrors.length > 1) {
-                    const random = Math.floor(Math.random() * chosenErrors.length);
-                    tryAgainPrompt(chosenErrors[random].character);
-                } else {
-                    tryAgainPrompt(chosenErrors[0].character);
-                }
-            } else {
-                nextButton.click();
-                if (document.getElementById("answer-enhancer-retry-prompt") != null) {
-                    document.getElementById("answer-enhancer-retry-prompt").remove();
-                }
-            }
-        } else {
-            nextButton.click();
-        }
-    } else {
-        nextButton.click();
-    }
-}
 
 // delay for transition animations then find which challenge corresponds to the token labels
 function onTranslationChallenge() {
@@ -257,6 +202,65 @@ function getChallengeGrader(challenge, prompt) {
     }
 }
 
+function normalizeSentence(sentence) {
+    return sentence.toLowerCase()
+        .replaceAll("?", "")
+        .replaceAll(".", "")
+        .replaceAll("!", "")
+        .replaceAll(",", "")
+        .replaceAll("'", "")
+        .replaceAll(" ", "")
+        .replaceAll("-", "")
+        .replaceAll(":", "")
+}
+
+// Check answer by comparing the textarea content to the list of translations
+function checkAnswer() {
+    if (nextButton == null) {
+        console.error("nextButton is null");
+        return;
+    }
+    if (hasFailed) {
+        hasFailed = false;
+        nextButton.click();
+        return;
+    }
+    if (document.querySelector('div[data-test="challenge challenge-translate"]') != null || document.querySelector('div[data-test="challenge challenge-completeReverseTranslation"]') != null) {
+        if (document.querySelector('textarea[data-test="challenge-translate-input"]') != null) {
+            const userinput = document.querySelector('textarea[data-test="challenge-translate-input"]').textContent.toLowerCase();
+            translationCorrect = false;
+            possibleErrors = [];
+            readVertex(1, userinput, 0);
+            if (!translationCorrect) {
+                let chosenErrors = [possibleErrors[0]];
+                possibleErrors.forEach((possibleError) => {
+                    if (possibleError.index > chosenErrors[0].index) {
+                        chosenErrors = [possibleError];
+                    } else if (possibleError.index == chosenErrors[0].index) {
+                        chosenErrors.push(possibleError);
+                    }
+                })
+                // errors in the same position are likely all valid hints so select one randomly
+                if (chosenErrors.length > 1) {
+                    const random = Math.floor(Math.random() * chosenErrors.length);
+                    tryAgainPrompt(chosenErrors[random].character);
+                } else {
+                    tryAgainPrompt(chosenErrors[0].character);
+                }
+            } else {
+                nextButton.click();
+                if (document.getElementById("answer-enhancer-retry-prompt") != null) {
+                    document.getElementById("answer-enhancer-retry-prompt").remove();
+                }
+            }
+        } else {
+            nextButton.click();
+        }
+    } else {
+        nextButton.click();
+    }
+}
+
 // recursively traverse the solution graph to resolve a correct translation, discarding auto & typo entries
 //TODO: tokenise input
 // fixes situations such as:
@@ -320,15 +324,4 @@ function tokenMatchesInput(userinput, tokenContent, inputposition) {
     }
 }
 
-function normalizeSentence(sentence) {
-    return sentence.toLowerCase()
-        .replaceAll("?", "")
-        .replaceAll(".", "")
-        .replaceAll("!", "")
-        .replaceAll(",", "")
-        .replaceAll("'", "")
-        .replaceAll(" ", "")
-        .replaceAll("-", "")
-        .replaceAll(":", "")
-}
 loadPrefetchedSessions();
