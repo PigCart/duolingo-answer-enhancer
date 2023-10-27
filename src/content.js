@@ -73,13 +73,13 @@ function tryAgainPrompt(hintMessage) {
         innerDiv.className = "answer-enhancer-inner";
         const retryHeader = document.createElement("h2");
         retryHeader.textContent = "Try again.";
-        const retryHint = document.createElement("div");
-        retryHint.id = "answer-enhancer-retry-hint"; retryHint.textContent = "Letter hint: " + hintMessage;
+        //const retryHint = document.createElement("div");
+        //retryHint.id = "answer-enhancer-retry-hint"; retryHint.textContent = "Letter hint: " + hintMessage;
         document.getElementById("session/PlayerFooter").style.borderTop = "none";
         document.getElementById("session/PlayerFooter").parentElement.prepend(retryElement);
         retryElement.appendChild(innerDiv);
         innerDiv.appendChild(retryHeader);
-        innerDiv.appendChild(retryHint);
+        //innerDiv.appendChild(retryHint);
     } else {
         nextButton.click();
         if (document.getElementById("answer-enhancer-retry-prompt") != null) {
@@ -232,6 +232,8 @@ function checkAnswer() {
             possibleErrors = [];
             readVertex(1, userinput, 0);
             if (!translationCorrect) {
+                tryAgainPrompt();
+                /*
                 let chosenErrors = [possibleErrors[0]];
                 possibleErrors.forEach((possibleError) => {
                     if (possibleError.index > chosenErrors[0].index) {
@@ -247,6 +249,7 @@ function checkAnswer() {
                 } else {
                     tryAgainPrompt(chosenErrors[0].character);
                 }
+                */
             } else {
                 nextButton.click();
                 if (document.getElementById("answer-enhancer-retry-prompt") != null) {
@@ -262,11 +265,6 @@ function checkAnswer() {
 }
 
 // recursively traverse the solution graph to resolve a correct translation, discarding auto & typo entries
-//TODO: tokenise input
-// fixes situations such as:
-// the "f" from "Jag föddes..." being hinted at over "Jag är född..." when the user input "jag var född..." is closer to the latter.
-// the "g" from "vi vill gå..." being hinted at over "vi vill åka..." when the user input "vi vill ha åka..." is closer to the latter.
-// is also just a cleaner solution and easier to read and expand on instead of all this checking of spaces and throwing indicies around.
 function readVertex(index, userinput, inputposition) {
     let vertex = solutionGrader.vertices[index];
     if (vertex.length == 0) {
@@ -291,10 +289,12 @@ function readVertex(index, userinput, inputposition) {
         }
         for (let token of vertex) {
             if (token.type != "typo" && token.auto != true && translationCorrect != true) {
-                if (tokenMatchesInput(userinput, token.lenient, inputposition)) {
+                //if (tokenMatchesInput(userinput, token.lenient, inputposition)) {
+                    if (userinput.startsWith(token.lenient)) {
                     readVertex(token.to, userinput.slice(token.lenient.length), inputposition + token.lenient.length);
                 } else if (Object.hasOwn(token, "orig")) {
-                    if (tokenMatchesInput(userinput, token.orig, inputposition)) {
+                    //if (tokenMatchesInput(userinput, token.orig, inputposition)) {
+                    if (userinput.startsWith(token.orig)) {
                         readVertex(token.to, userinput.slice(token.orig.length), inputposition + token.orig.length);
                     }
                 }
@@ -303,6 +303,7 @@ function readVertex(index, userinput, inputposition) {
     }
 }
 
+/*
 // return true on match or return false and add the error to the errors list
 function tokenMatchesInput(userinput, tokenContent, inputposition) {
     let nonMatchingCharacter = null;
@@ -323,5 +324,7 @@ function tokenMatchesInput(userinput, tokenContent, inputposition) {
         return true;
     }
 }
+*/
 
 loadPrefetchedSessions();
+console.log("Duolingo Answer Enhancer Loaded");
