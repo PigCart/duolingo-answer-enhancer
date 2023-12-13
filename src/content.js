@@ -1,13 +1,21 @@
+// challenge variables
 var nextButton;
-var prefetchedSessions;
 var previousURL = "";
-var solutionGrader;
 var foundPrompt = false;
-var liveSession;
 var translationCorrect = false;
 var possibleErrors = [];
+var currentChallengeIndex = -1;
+var currentChallenge = {};
+var inValidChallenge = false;
+var shouldOnlyCheckSpelling = false;
+var isListenChallenge = false;
 var hasFailed = false;
 
+// session variables
+var prefetchedSessions = [];
+var liveSession = {};
+
+// document variables
 var fetchScript = document.createElement('script');
 var styleSheet = document.createElement('link');
 fetchScript.src = browser.runtime.getURL('fetch-override.js');
@@ -19,21 +27,7 @@ document.head.appendChild(styleSheet);
 // Listen for events from the fetch override
 document.addEventListener('fetchSessions', (event) => {
     liveSession = event.detail;
-    // persist session across extension refresh for debugging...
-    if (document.getElementById("debugSession") == null) {
-        const sessionDebugElem = document.createElement('div');
-        sessionDebugElem.id = "debugSession";
-        sessionDebugElem.style = "display: none;";
-        sessionDebugElem.textContent = JSON.stringify(liveSession);
-        document.getElementsByTagName('body')[0].appendChild(sessionDebugElem);
-    } else {
-        document.getElementById("debugSession").textContent = JSON.stringify(liveSession);
-    }
 });
-if (document.getElementById("debugSession") != null) {
-    liveSession = JSON.parse(document.getElementById("debugSession").textContent);
-    console.log("retrieved debugSession", liveSession);
-}
 
 // cancel enter key presses to prevent the challenge ending and instead run the custom answer checker
 window.addEventListener("keydown", function(keyboardEvent) {
@@ -55,6 +49,11 @@ setInterval(() => {
         previousURL = window.location.href;
         if (window.location.href.toLowerCase().includes("duolingo.com/learn")) {
             loadPrefetchedSessions();
+            currentChallengeIndex = -1;
+            currentChallenge = null;
+            liveSession = null;
+        } else if (window.location.href.toLowerCase().includes("duolingo.com/lesson")) {
+            sessionJustStarted = true;
         }
     }
     //FIXME: why function "dies"(?) when challenge changes??
@@ -65,7 +64,7 @@ setInterval(() => {
 }, 1000);
 
 // insert a prompt to try again with a letter hint
-function tryAgainPrompt(hintMessage) {
+function tryAgainPrompt() {
     if (document.getElementById("answer-enhancer-retry-prompt") == null) {
         const retryElement = document.createElement("div");
         retryElement.id = "answer-enhancer-retry-prompt";
@@ -73,13 +72,10 @@ function tryAgainPrompt(hintMessage) {
         innerDiv.className = "answer-enhancer-inner";
         const retryHeader = document.createElement("h2");
         retryHeader.textContent = "Try again.";
-        //const retryHint = document.createElement("div");
-        //retryHint.id = "answer-enhancer-retry-hint"; retryHint.textContent = "Letter hint: " + hintMessage;
         document.getElementById("session/PlayerFooter").style.borderTop = "none";
         document.getElementById("session/PlayerFooter").parentElement.prepend(retryElement);
         retryElement.appendChild(innerDiv);
         innerDiv.appendChild(retryHeader);
-        //innerDiv.appendChild(retryHint);
     } else {
         nextButton.click();
         if (document.getElementById("answer-enhancer-retry-prompt") != null) {
@@ -93,7 +89,6 @@ function tryAgainPrompt(hintMessage) {
 document.arrive('div[data-test="word-bank"]', {fireOnAttributesModification: true, existing: true}, () => {
     if (document.getElementById("answer-enhancer-retry-prompt") != null) {
         document.getElementById("answer-enhancer-retry-prompt").remove();
-        hasFailed = true;
     }
 });
 
@@ -116,17 +111,43 @@ document.arrive('button[data-test="player-next"]', {fireOnAttributesModification
     }
 });
 
-// detect arrival of a new translation challenge
-//TODO: support "challenge challenge-partialReverseTranslate" and reverse. translation input is a label containing a contenteditable span.
+// handle arrival of new challenges
+document.arrive('h1[data-test="challenge-header"]', {fireOnAttributesModification: true, existing: true}, () => {
+    currentChallenge = null;
+    isListenChallenge = false;
+    inValidChallenge = false;
+});
+document.arrive('div[data-test="challenge challenge-partialReverseTranslate"]', {fireOnAttributesModification: true, existing: true}, () => {
+    //TODO
+});
+document.arrive('div[data-test="challenge challenge-listen"]', {fireOnAttributesModification: true, existing: true}, () => {
+    onListenChallenge();
+});
+document.arrive('div[data-test="challenge challenge-listenTap"]', {fireOnAttributesModification: true, existing: true}, () => {
+    onListenChallenge();
+});
+document.arrive('div[data-test="challenge challenge-listenComplete"]', {fireOnAttributesModification: true, existing: true}, () => {
+    //TODO
+});
 document.arrive('div[data-test="challenge challenge-translate"]', {fireOnAttributesModification: true, existing: true}, () => {
     onTranslationChallenge();
 });
 document.arrive('div[data-test="challenge challenge-completeReverseTranslation"]', {fireOnAttributesModification: true, existing: true}, () => {
     onTranslationChallenge();
+    //some (all?) of these challenges are actually writing in swedish though?
 });
+
+function onListenChallenge() {
+    setTimeout(function() {
+        inValidChallenge = true;
+        shouldOnlyCheckSpelling = true;
+        isListenChallenge = true;
+    }, 2000);
+}
 
 // delay for transition animations then find which challenge corresponds to the token labels
 function onTranslationChallenge() {
+    inValidChallenge = true;
     setTimeout(function() {
         const sentenceTokenNodes = document.querySelectorAll('[data-test="hint-token"]');
         if (sentenceTokenNodes == null) {
@@ -139,13 +160,16 @@ function onTranslationChallenge() {
             translations = [];
             foundPrompt = false;
             if (liveSession != null) {
-                searchSessionChallenges(liveSession, prompt);
+                searchSessionChallenges(liveSession, prompt, false);
             }
             prefetchedSessions.forEach((prefetchedSession) => {
-                searchSessionChallenges(prefetchedSession.session, prompt);
+                searchSessionChallenges(prefetchedSession.session, prompt, false);
             });
             if (foundPrompt == false) {
+                inValidChallenge = false;
                 console.error("Couldn't find challenge with prompt: ", prompt);
+                //FIXME: sometimes hint tokens are hidden, thus no prompt is found.
+                // could instead get text from element with z-index: 150 that contains the letters in the speech bubble
             }
         }
     }, 2000);
@@ -170,33 +194,52 @@ function loadPrefetchedSessions() {
 }
 
 // check translations for all challenge types for the specified session
-function searchSessionChallenges(session, prompt) {
+function searchSessionChallenges(session, prompt, isListenChallenge) {
     session.challenges.forEach((challenge) => {
-        getChallengeGrader(challenge, prompt);
+        getChallengeGrader(challenge, prompt, isListenChallenge);
     });
+    // when are these other ones even used?
     if (Object.hasOwn(session, "adaptiveChallenges")) {
         session.adaptiveChallenges.forEach((challenge) => {
-            getChallengeGrader(challenge, prompt);
+            getChallengeGrader(challenge, prompt, isListenChallenge);
         });
     }
     session.adaptiveInterleavedChallenges.challenges.forEach((challenge) => {
-        getChallengeGrader(challenge, prompt);
+        getChallengeGrader(challenge, prompt, isListenChallenge);
     });
     session.easierAdaptiveChallenges.forEach((challenge) => {
-        getChallengeGrader(challenge, prompt);
+        getChallengeGrader(challenge, prompt, isListenChallenge);
     });
 }
 // get translations from a challenge and turn them into regex.
-function getChallengeGrader(challenge, prompt) {
-    if (challenge.prompt != null){
-        if (normalizeSentence(challenge.prompt) == normalizeSentence(prompt)) {
-            foundPrompt = true;
-            solutionGrader = challenge.grader
-            if (solutionGrader.version != 0) {
-                console.warn("Grader has updated and may result in errors");
+function getChallengeGrader(challenge, prompt, isListenChallenge) {
+    if (isListenChallenge) {
+        if (challenge.type == "listen" || challenge.type == "listenTap" || challenge.type == "listenComplete") {
+            if (Object.hasOwn(challenge, "grader")) {
+                if (Object.hasOwn(challenge, "solutionTranslation")) {
+                    if (normalizeSentence(challenge.solutionTranslation) == prompt) {
+                        translationCorrect = true;
+                    }
+                }
+                if (Object.hasOwn(challenge, "prompt")) {
+                    console.log(prompt, challenge.prompt)
+                    if (normalizeSentence(challenge.prompt) == prompt) {
+                        translationCorrect = true;
+                    }
+                }
             }
-            if (solutionGrader.whitespaceDelimited != true) {
-                console.warn("this challenge is not whitespace delimited and may result in errors");
+        }
+    } else {
+        if (challenge.prompt != null) {
+            if (normalizeSentence(challenge.prompt) == normalizeSentence(prompt)) {
+                foundPrompt = true;
+                currentChallenge = challenge
+                if (currentChallenge.grader.version != 0) {
+                    console.warn("Grader has updated and may result in errors");
+                }
+                if (currentChallenge.grader.whitespaceDelimited != true) {
+                    console.warn("this challenge is not whitespace delimited and may result in errors");
+                }
             }
         }
     }
@@ -225,35 +268,37 @@ function checkAnswer() {
         nextButton.click();
         return;
     }
-    if (document.querySelector('div[data-test="challenge challenge-translate"]') != null || document.querySelector('div[data-test="challenge challenge-completeReverseTranslation"]') != null) {
+    if (inValidChallenge) {
         if (document.querySelector('textarea[data-test="challenge-translate-input"]') != null) {
             const userinput = document.querySelector('textarea[data-test="challenge-translate-input"]').textContent.toLowerCase();
-            translationCorrect = false;
-            possibleErrors = [];
-            readVertex(1, userinput, 0);
-            if (!translationCorrect) {
-                tryAgainPrompt();
-                /*
-                let chosenErrors = [possibleErrors[0]];
-                possibleErrors.forEach((possibleError) => {
-                    if (possibleError.index > chosenErrors[0].index) {
-                        chosenErrors = [possibleError];
-                    } else if (possibleError.index == chosenErrors[0].index) {
-                        chosenErrors.push(possibleError);
-                    }
-                })
-                // errors in the same position are likely all valid hints so select one randomly
-                if (chosenErrors.length > 1) {
-                    const random = Math.floor(Math.random() * chosenErrors.length);
-                    tryAgainPrompt(chosenErrors[random].character);
-                } else {
-                    tryAgainPrompt(chosenErrors[0].character);
+            if (isListenChallenge) {
+                translationCorrect = false;
+                if (liveSession != null) {
+                    searchSessionChallenges(liveSession, normalizeSentence(userinput), true);
                 }
-                */
+                prefetchedSessions.forEach((prefetchedSession) => {
+                    searchSessionChallenges(prefetchedSession.session, normalizeSentence(userinput), true);
+                });
+                if (translationCorrect) {
+                    if (document.getElementById("answer-enhancer-retry-prompt") != null) {
+                        document.getElementById("answer-enhancer-retry-prompt").remove();
+                    }
+                    nextButton.click();
+                } else {
+                    tryAgainPrompt();
+                }
+
             } else {
-                nextButton.click();
-                if (document.getElementById("answer-enhancer-retry-prompt") != null) {
-                    document.getElementById("answer-enhancer-retry-prompt").remove();
+                translationCorrect = false;
+                possibleErrors = [];
+                traverseGrader(1, userinput, 0);
+                if (!translationCorrect) {
+                    tryAgainPrompt();
+                } else {
+                    nextButton.click();
+                    if (document.getElementById("answer-enhancer-retry-prompt") != null) {
+                        document.getElementById("answer-enhancer-retry-prompt").remove();
+                    }    
                 }
             }
         } else {
@@ -265,21 +310,12 @@ function checkAnswer() {
 }
 
 // recursively traverse the solution graph to resolve a correct translation, discarding auto & typo entries
-function readVertex(index, userinput, inputposition) {
-    let vertex = solutionGrader.vertices[index];
+function traverseGrader(index, userinput, inputposition) {
+    let vertex = currentChallenge.grader.vertices[index];
     if (vertex.length == 0) {
         // the grader ends with an empty vertex
         if (userinput.length > 0) {
-            if (userinput[0] == " ") {
-                if (userinput[1] != null || userinput[1] != " ") {
-                    possibleErrors.push({"index": inputposition, "character":"❌" + userinput[1]})
-                } else {
-                    // user is being weird just ignore them
-                    translationCorrect = true;
-                }
-            } else {
-                possibleErrors.push({"index": inputposition, "character":"❌" + userinput[0]})
-            }
+            // theres more so its not actually correct i guess. i think thats what was going on here.
         } else {
             translationCorrect = true;
         }
@@ -289,42 +325,17 @@ function readVertex(index, userinput, inputposition) {
         }
         for (let token of vertex) {
             if (token.type != "typo" && token.auto != true && translationCorrect != true) {
-                //if (tokenMatchesInput(userinput, token.lenient, inputposition)) {
                     if (userinput.startsWith(token.lenient)) {
-                    readVertex(token.to, userinput.slice(token.lenient.length), inputposition + token.lenient.length);
+                    traverseGrader(token.to, userinput.slice(token.lenient.length), inputposition + token.lenient.length);
                 } else if (Object.hasOwn(token, "orig")) {
-                    //if (tokenMatchesInput(userinput, token.orig, inputposition)) {
                     if (userinput.startsWith(token.orig)) {
-                        readVertex(token.to, userinput.slice(token.orig.length), inputposition + token.orig.length);
+                        traverseGrader(token.to, userinput.slice(token.orig.length), inputposition + token.orig.length);
                     }
                 }
             }
         }
     }
 }
-
-/*
-// return true on match or return false and add the error to the errors list
-function tokenMatchesInput(userinput, tokenContent, inputposition) {
-    let nonMatchingCharacter = null;
-    for (var i = 0; i < tokenContent.length; i++) {
-        if (userinput[i] != tokenContent[i]) {
-            if (tokenContent[i] == " " || userinput[i + 1] == tokenContent[i]) {
-                nonMatchingCharacter = {"index": inputposition + i, "character":"❌" + userinput[i]};
-            } else {
-                nonMatchingCharacter = {"index": inputposition + i, "character": tokenContent[i]};
-            }
-            break;
-        }
-    }
-    if (nonMatchingCharacter != null) {
-        possibleErrors.push(nonMatchingCharacter);
-        return false;
-    } else {
-        return true;
-    }
-}
-*/
 
 loadPrefetchedSessions();
 console.log("Duolingo Answer Enhancer Loaded");
