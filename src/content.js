@@ -4,10 +4,8 @@ var previousURL = "";
 var foundPrompt = false;
 var translationCorrect = false;
 var possibleErrors = [];
-var currentChallengeIndex = -1;
 var currentChallenge = {};
 var inValidChallenge = false;
-var shouldOnlyCheckSpelling = false;
 var isListenChallenge = false;
 var hasFailed = false;
 
@@ -49,11 +47,7 @@ setInterval(() => {
         previousURL = window.location.href;
         if (window.location.href.toLowerCase().includes("duolingo.com/learn")) {
             loadPrefetchedSessions();
-            currentChallengeIndex = -1;
-            currentChallenge = null;
             liveSession = null;
-        } else if (window.location.href.toLowerCase().includes("duolingo.com/lesson")) {
-            sessionJustStarted = true;
         }
     }
     //FIXME: why function "dies"(?) when challenge changes??
@@ -140,7 +134,6 @@ document.arrive('div[data-test="challenge challenge-completeReverseTranslation"]
 function onListenChallenge() {
     setTimeout(function() {
         inValidChallenge = true;
-        shouldOnlyCheckSpelling = true;
         isListenChallenge = true;
     }, 2000);
 }
@@ -204,12 +197,16 @@ function searchSessionChallenges(session, prompt, isListenChallenge) {
             getChallengeGrader(challenge, prompt, isListenChallenge);
         });
     }
-    session.adaptiveInterleavedChallenges.challenges.forEach((challenge) => {
-        getChallengeGrader(challenge, prompt, isListenChallenge);
-    });
-    session.easierAdaptiveChallenges.forEach((challenge) => {
-        getChallengeGrader(challenge, prompt, isListenChallenge);
-    });
+    if (Object.hasOwn(session, "adaptiveInterleavedChallenges")) {
+        session.adaptiveInterleavedChallenges.challenges.forEach((challenge) => {
+            getChallengeGrader(challenge, prompt, isListenChallenge);
+        });
+    }
+    if (Object.hasOwn(session, "easierAdaptiveChallenges")) {
+        session.easierAdaptiveChallenges.forEach((challenge) => {
+            getChallengeGrader(challenge, prompt, isListenChallenge);
+        });
+    }
 }
 // get translations from a challenge and turn them into regex.
 function getChallengeGrader(challenge, prompt, isListenChallenge) {
