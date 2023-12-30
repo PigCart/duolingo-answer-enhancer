@@ -222,7 +222,6 @@ function getChallengeGrader(challenge, prompt, isListenChallenge) {
                     }
                 }
                 if (Object.hasOwn(challenge, "prompt")) {
-                    console.log(prompt, challenge.prompt)
                     if (normalizeSentence(challenge.prompt) == prompt) {
                         translationCorrect = true;
                     }
