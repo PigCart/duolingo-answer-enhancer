@@ -71,11 +71,14 @@ function tryAgainPrompt() {
         retryElement.appendChild(innerDiv);
         innerDiv.appendChild(retryHeader);
     } else {
-        nextButton.click();
-        if (document.getElementById("answer-enhancer-retry-prompt") != null) {
-            document.getElementById("answer-enhancer-retry-prompt").remove();
-            hasFailed = true;
+        const difficultyButton = document.querySelector('button[data-test="player-toggle-keyboard"]');
+        if (difficultyButton != null) {
+            difficultyButton.click();
+        } else {
+            nextButton.click();
         }
+        document.getElementById("answer-enhancer-retry-prompt").remove();
+        hasFailed = true;
     }
 }
 
