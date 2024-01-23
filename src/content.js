@@ -3,15 +3,13 @@ var nextButton;
 var previousURL = "";
 var foundPrompt = false;
 var translationCorrect = false;
-var possibleErrors = [];
 var currentChallenge = {};
 var inValidChallenge = false;
-var isListenChallenge = false;
 var hasFailed = false;
 
 // session variables
 var prefetchedSessions = [];
-var liveSession = {};
+var lastFetchedSession = {};
 
 // document variables
 var fetchScript = document.createElement('script');
@@ -24,7 +22,8 @@ document.head.appendChild(styleSheet);
 
 // Listen for events from the fetch override
 document.addEventListener('fetchSessions', (event) => {
-    liveSession = event.detail;
+    lastFetchedSession = event.detail;
+    console.log("Session fetched:",lastFetchedSession);
 });
 
 // cancel enter key presses to prevent the challenge ending and instead run the custom answer checker
@@ -36,7 +35,7 @@ window.addEventListener("keydown", function(keyboardEvent) {
         if (customNextButton != null) {
             checkAnswer();
         } else {
-            console.error("customNextButton is null");
+            console.warn("customNextButton is null");
         }
     }
 }, true);
@@ -47,7 +46,7 @@ setInterval(() => {
         previousURL = window.location.href;
         if (window.location.href.toLowerCase().includes("duolingo.com/learn")) {
             loadPrefetchedSessions();
-            liveSession = null;
+            lastFetchedSession = null;
         }
     }
     //FIXME: why function "dies"(?) when challenge changes??
@@ -56,6 +55,26 @@ setInterval(() => {
         yourButtonButBetter.onclick = function() {checkAnswer()}
     }
 }, 1000);
+
+// open duolingo indexed database and request prefetched sessions
+function loadPrefetchedSessions() {
+    if ('indexedDB' in window) {
+        let openRequest = window.indexedDB.open('duolingo');
+        openRequest.onsuccess = function() {
+            let IDBRequest = openRequest.result.transaction('prefetchedSessions').objectStore('prefetchedSessions').getAll();
+            IDBRequest.onsuccess = function() {
+                prefetchedSessions = IDBRequest.result;
+                console.log("Loaded prefetched sessions");
+            }
+            IDBRequest.onerror = function(event) {
+                console.warn(event);
+            }
+        };
+        openRequest.onerror = function(event) {
+            console.warn(event);
+        }
+    }
+}
 
 // insert a prompt to try again with a letter hint
 function tryAgainPrompt() {
@@ -111,133 +130,133 @@ document.arrive('button[data-test="player-next"]', {fireOnAttributesModification
 // handle arrival of new challenges
 document.arrive('h1[data-test="challenge-header"]', {fireOnAttributesModification: true, existing: true}, () => {
     currentChallenge = null;
-    isListenChallenge = false;
     inValidChallenge = false;
 });
 document.arrive('div[data-test="challenge challenge-partialReverseTranslate"]', {fireOnAttributesModification: true, existing: true}, () => {
     //TODO
 });
 document.arrive('div[data-test="challenge challenge-listen"]', {fireOnAttributesModification: true, existing: true}, () => {
-    onListenChallenge();
+    inValidChallenge = true;
 });
 document.arrive('div[data-test="challenge challenge-listenTap"]', {fireOnAttributesModification: true, existing: true}, () => {
-    onListenChallenge();
+    inValidChallenge = true;
 });
 document.arrive('div[data-test="challenge challenge-listenComplete"]', {fireOnAttributesModification: true, existing: true}, () => {
     //TODO
 });
 document.arrive('div[data-test="challenge challenge-translate"]', {fireOnAttributesModification: true, existing: true}, () => {
-    onTranslationChallenge();
+    inValidChallenge = true;
 });
 document.arrive('div[data-test="challenge challenge-completeReverseTranslation"]', {fireOnAttributesModification: true, existing: true}, () => {
-    onTranslationChallenge();
-    //some (all?) of these challenges are actually writing in swedish though?
+    inValidChallenge = true;
 });
 
-function onListenChallenge() {
-    setTimeout(function() {
-        inValidChallenge = true;
-        isListenChallenge = true;
-    }, 2000);
-}
-
-// delay for transition animations then find which challenge corresponds to the token labels
-function onTranslationChallenge() {
-    inValidChallenge = true;
-    setTimeout(function() {
+function checkAnswer() {
+    // this shouldn't happen but if it does lets not get stuck in a challenge
+    if (nextButton == null) {
+        console.warn("nextButton is null");
+        return;
+    }
+    // prevent popup appearing if we've already failed
+    if (hasFailed) {
+        hasFailed = false;
+        nextButton.click();
+        return;
+    }
+    if (inValidChallenge) {
+        // get sentence tokens
         const sentenceTokenNodes = document.querySelectorAll('[data-test="hint-token"]');
         if (sentenceTokenNodes == null) {
-            console.error("Could not get sentence token nodes");
-        } else {
-            let prompt = "";
-            for (var i = 0; i < sentenceTokenNodes.length; i++) {
-                prompt = prompt.concat(sentenceTokenNodes[i].getAttribute('aria-label').toLowerCase());
-            }
-            translations = [];
+            console.warn("Could not get sentence token nodes");
+            return;
+        }
+        let prompt = "";
+        // extract challenge prompt from the sentence token labels
+        for (var i = 0; i < sentenceTokenNodes.length; i++) {
+            prompt = normalizeSentence(prompt.concat(sentenceTokenNodes[i].getAttribute('aria-label').toLowerCase()));
+        }
+        // get user input
+        if (document.querySelector('textarea[data-test="challenge-translate-input"]') != null) {
+            const userinput = normalizeSentence(document.querySelector('textarea[data-test="challenge-translate-input"]').textContent.toLowerCase());
+            // search challenges for solutions
+            translationCorrect = false;
             foundPrompt = false;
-            if (liveSession != null) {
-                searchSessionChallenges(liveSession, prompt, false);
+            if (lastFetchedSession != null) {
+                forEachChallengeGetChallengeGrader(lastFetchedSession, prompt, userinput);
             }
             prefetchedSessions.forEach((prefetchedSession) => {
-                searchSessionChallenges(prefetchedSession.session, prompt, false);
+                forEachChallengeGetChallengeGrader(prefetchedSession.session, prompt, userinput);
             });
-            if (foundPrompt == false) {
-                inValidChallenge = false;
-                console.error("Couldn't find challenge with prompt: ", prompt);
-                //FIXME: sometimes hint tokens are hidden, thus no prompt is found.
-                // could instead get text from element with z-index: 150 that contains the letters in the speech bubble
+            // check user input against the solution grader and display prompt or move on
+            if (foundPrompt) {
+                translationCorrect = false;
+                console.log("traversing grader");
+                traverseGrader(1, userinput, 0);
             }
+            if (!translationCorrect) {
+                tryAgainPrompt();
+                // debug logging:
+                if (foundPrompt) {
+                    console.log("incorrect! grader:", currentChallenge.grader.vertices);
+                }
+            } else {
+                nextButton.click();
+                if (document.getElementById("answer-enhancer-retry-prompt") != null) {
+                    document.getElementById("answer-enhancer-retry-prompt").remove();
+                }    
+            }
+        } else {
+            // move on if textarea is null
+            nextButton.click();
         }
-    }, 2000);
-}
-// open duolingo indexed database and request prefetched sessions
-function loadPrefetchedSessions() {
-    if ('indexedDB' in window) {
-        let openRequest = window.indexedDB.open('duolingo');
-        openRequest.onsuccess = function() {
-            let IDBRequest = openRequest.result.transaction('prefetchedSessions').objectStore('prefetchedSessions').getAll();
-            IDBRequest.onsuccess = function() {
-                prefetchedSessions = IDBRequest.result;
-            }
-            IDBRequest.onerror = function(event) {
-                console.error(event);
-            }
-        };
-        openRequest.onerror = function(event) {
-            console.error(event);
-        }
+    } else {
+        // move on if this challenge type is not supported
+        nextButton.click();
     }
 }
 
-// check translations for all challenge types for the specified session
-function searchSessionChallenges(session, prompt, isListenChallenge) {
+// search challenges within the specified session
+function forEachChallengeGetChallengeGrader(session, prompt, userinput) {
     session.challenges.forEach((challenge) => {
-        getChallengeGrader(challenge, prompt, isListenChallenge);
+        gradeInputForChallenge(challenge, prompt, userinput);
     });
     // when are these other ones even used?
     if (Object.hasOwn(session, "adaptiveChallenges")) {
         session.adaptiveChallenges.forEach((challenge) => {
-            getChallengeGrader(challenge, prompt, isListenChallenge);
+            gradeInputForChallenge(challenge, prompt, userinput);
         });
     }
     if (Object.hasOwn(session, "adaptiveInterleavedChallenges")) {
         session.adaptiveInterleavedChallenges.challenges.forEach((challenge) => {
-            getChallengeGrader(challenge, prompt, isListenChallenge);
+            gradeInputForChallenge(challenge, prompt, userinput);
         });
     }
     if (Object.hasOwn(session, "easierAdaptiveChallenges")) {
         session.easierAdaptiveChallenges.forEach((challenge) => {
-            getChallengeGrader(challenge, prompt, isListenChallenge);
+            gradeInputForChallenge(challenge, prompt, userinput);
         });
     }
 }
-// get translations from a challenge and turn them into regex.
-function getChallengeGrader(challenge, prompt, isListenChallenge) {
-    if (isListenChallenge) {
-        if (challenge.type == "listen" || challenge.type == "listenTap" || challenge.type == "listenComplete") {
-            if (Object.hasOwn(challenge, "grader")) {
-                if (Object.hasOwn(challenge, "solutionTranslation")) {
-                    if (normalizeSentence(challenge.solutionTranslation) == prompt) {
-                        translationCorrect = true;
-                    }
-                }
-                if (Object.hasOwn(challenge, "prompt")) {
-                    if (normalizeSentence(challenge.prompt) == prompt) {
-                        translationCorrect = true;
-                    }
-                }
-            }
+// search for matching prompt or solution within the specified challenge
+function gradeInputForChallenge(challenge, prompt, userinput) {
+    // check user input against challenge solution directly (done for listen challenges as they don't have readable prompts and only have one solution)
+    if (Object.hasOwn(challenge, "solutionTranslation")) {
+        if (normalizeSentence(challenge.solutionTranslation) == userinput) {
+            translationCorrect = true;
+            console.log("User input matches solution translation exactly");
         }
-    } else {
-        if (challenge.prompt != null) {
-            if (normalizeSentence(challenge.prompt) == normalizeSentence(prompt)) {
-                foundPrompt = true;
-                currentChallenge = challenge
+    }
+    // ignore challenges without prompts
+    if (Object.hasOwn(challenge, "prompt") && !translationCorrect) {
+        if (normalizeSentence(challenge.prompt) == prompt) {
+            foundPrompt = true;
+            currentChallenge = challenge
+            if (currentChallenge.grader != null){ // token bubble challenges dont have a grader
                 if (currentChallenge.grader.version != 0) {
-                    console.warn("Grader has updated and may result in errors");
+                    console.warn("Grader has updated and may result in errors", currentChallenge);
                 }
                 if (currentChallenge.grader.whitespaceDelimited != true) {
-                    console.warn("this challenge is not whitespace delimited and may result in errors");
+                    console.warn("this challenge is not whitespace delimited and may result in errors", currentChallenge);
                 }
             }
         }
@@ -256,77 +275,33 @@ function normalizeSentence(sentence) {
         .replaceAll(":", "")
 }
 
-// Check answer by comparing the textarea content to the list of translations
-function checkAnswer() {
-    if (nextButton == null) {
-        console.error("nextButton is null");
-        return;
-    }
-    if (hasFailed) {
-        hasFailed = false;
-        nextButton.click();
-        return;
-    }
-    if (inValidChallenge) {
-        if (document.querySelector('textarea[data-test="challenge-translate-input"]') != null) {
-            const userinput = document.querySelector('textarea[data-test="challenge-translate-input"]').textContent.toLowerCase();
-            if (isListenChallenge) {
-                translationCorrect = false;
-                if (liveSession != null) {
-                    searchSessionChallenges(liveSession, normalizeSentence(userinput), true);
-                }
-                prefetchedSessions.forEach((prefetchedSession) => {
-                    searchSessionChallenges(prefetchedSession.session, normalizeSentence(userinput), true);
-                });
-                if (translationCorrect) {
-                    if (document.getElementById("answer-enhancer-retry-prompt") != null) {
-                        document.getElementById("answer-enhancer-retry-prompt").remove();
-                    }
-                    nextButton.click();
-                } else {
-                    tryAgainPrompt();
-                }
-
-            } else {
-                translationCorrect = false;
-                possibleErrors = [];
-                traverseGrader(1, userinput, 0);
-                if (!translationCorrect) {
-                    tryAgainPrompt();
-                } else {
-                    nextButton.click();
-                    if (document.getElementById("answer-enhancer-retry-prompt") != null) {
-                        document.getElementById("answer-enhancer-retry-prompt").remove();
-                    }    
-                }
-            }
-        } else {
-            nextButton.click();
-        }
-    } else {
-        nextButton.click();
-    }
-}
-
-// recursively traverse the solution graph to resolve a correct translation, discarding auto & typo entries
+// recursively traverse the solution grader to resolve a correct translation
 function traverseGrader(index, userinput, inputposition) {
     let vertex = currentChallenge.grader.vertices[index];
     if (vertex.length == 0) {
         // the grader ends with an empty vertex
-        if (userinput.length > 0) {
-            // theres more so its not actually correct i guess. i think thats what was going on here.
-        } else {
+        console.log("completed grader traversal");
+        if (userinput.length == 0) {
+            // since the compared part of the input is removed each iteration, if theres still input by the end it can't be correct.
             translationCorrect = true;
+            console.log("translation is correct");
+        } else {
+            console.log("userinput is longer than grader length");
         }
     } else {
         if (userinput.length == 0) {
             userinput = " "; //workaround for incomplete sentences
         }
         for (let token of vertex) {
+            // ignore auto and typo entries
             if (token.type != "typo" && token.auto != true && translationCorrect != true) {
-                    if (userinput.startsWith(token.lenient)) {
+                if (token.lenient == " ") {
+                    // ignore spaces, the default typo system handles them well enough
+                    traverseGrader(token.to, userinput, inputposition + token.lenient.length);
+                } else if (userinput.startsWith(token.lenient)) {
                     traverseGrader(token.to, userinput.slice(token.lenient.length), inputposition + token.lenient.length);
                 } else if (Object.hasOwn(token, "orig")) {
+                    // seems to only handle punctuation & capitalization, which are ignored in this extension. included just in case other courses handle this differently.
                     if (userinput.startsWith(token.orig)) {
                         traverseGrader(token.to, userinput.slice(token.orig.length), inputposition + token.orig.length);
                     }
@@ -337,4 +312,4 @@ function traverseGrader(index, userinput, inputposition) {
 }
 
 loadPrefetchedSessions();
-console.log("Duolingo Answer Enhancer Loaded");
+console.info("Duolingo Answer Enhancer Loaded");
