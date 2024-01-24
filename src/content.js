@@ -24,6 +24,8 @@ document.head.appendChild(styleSheet);
 document.addEventListener('fetchSessions', (event) => {
     lastFetchedSession = event.detail;
     console.log("Session fetched:",lastFetchedSession);
+    // reload prefetched sessions
+    loadPrefetchedSessions();
 });
 
 // cancel enter key presses to prevent the challenge ending and instead run the custom answer checker
@@ -64,7 +66,6 @@ function loadPrefetchedSessions() {
             let IDBRequest = openRequest.result.transaction('prefetchedSessions').objectStore('prefetchedSessions').getAll();
             IDBRequest.onsuccess = function() {
                 prefetchedSessions = IDBRequest.result;
-                console.log("Loaded prefetched sessions");
             }
             IDBRequest.onerror = function(event) {
                 console.warn(event);
@@ -73,6 +74,8 @@ function loadPrefetchedSessions() {
         openRequest.onerror = function(event) {
             console.warn(event);
         }
+    } else {
+        console.warn("This browser does not support indexedDB");
     }
 }
 
@@ -190,7 +193,6 @@ function checkAnswer() {
             // check user input against the solution grader and display prompt or move on
             if (foundPrompt) {
                 translationCorrect = false;
-                console.log("traversing grader");
                 traverseGrader(1, userinput, 0);
             }
             if (!translationCorrect) {
@@ -239,13 +241,6 @@ function forEachChallengeGetChallengeGrader(session, prompt, userinput) {
 }
 // search for matching prompt or solution within the specified challenge
 function gradeInputForChallenge(challenge, prompt, userinput) {
-    // check user input against challenge solution directly (done for listen challenges as they don't have readable prompts and only have one solution)
-    if (Object.hasOwn(challenge, "solutionTranslation")) {
-        if (normalizeSentence(challenge.solutionTranslation) == userinput) {
-            translationCorrect = true;
-            console.log("User input matches solution translation exactly");
-        }
-    }
     // ignore challenges without prompts
     if (Object.hasOwn(challenge, "prompt") && !translationCorrect) {
         if (normalizeSentence(challenge.prompt) == prompt) {
@@ -259,6 +254,11 @@ function gradeInputForChallenge(challenge, prompt, userinput) {
                     console.warn("this challenge is not whitespace delimited and may result in errors", currentChallenge);
                 }
             }
+        } else if (normalizeSentence(challenge.prompt) == userinput) {
+            // done for listen challenges as they dont have readable prompts
+            console.debug(userinput, challenge.prompt);
+            translationCorrect = true;
+            console.log("User input matches prompt");
         }
     }
 }
